@@ -47,6 +47,9 @@ function BomTable({
   tree,
   currency,
   canRemove = false,
+  parentItemId,
+  parentName,
+  parentPartNumber,
   parentKind,
 }: {
   title: string;
@@ -57,6 +60,9 @@ function BomTable({
   currency: string;
   /** Admins can drop a single line. The part stays in inventory. */
   canRemove?: boolean;
+  parentItemId: string;
+  parentName: string;
+  parentPartNumber: string;
   parentKind: "board" | "product";
 }) {
   const subtotal = lines.reduce((s, l) => s + l.qtyPer * unitCostOf(l.child, tree).cost, 0);
@@ -138,6 +144,9 @@ function BomTable({
                     <td className="no-print px-4 py-2 text-right">
                       <RemoveBomLineButton
                         lineId={l.id}
+                        parentItemId={parentItemId}
+                        parentName={parentName}
+                        parentPartNumber={parentPartNumber}
                         partNumber={l.child.partNumber}
                         partName={l.child.name}
                         parentKind={parentKind}
@@ -326,6 +335,9 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           tree={tree}
           currency={settings.currency}
           canRemove={canRemoveLine}
+          parentItemId={product.id}
+          parentName={product.name}
+          parentPartNumber={product.partNumber}
           parentKind="board"
         />
       ) : (
@@ -338,6 +350,9 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             tree={tree}
             currency={settings.currency}
             canRemove={canRemoveLine}
+            parentItemId={product.id}
+            parentName={product.name}
+            parentPartNumber={product.partNumber}
             parentKind="product"
           />
           {hardwareLines.length > 0 ? (
@@ -348,6 +363,9 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               tree={tree}
               currency={settings.currency}
               canRemove={canRemoveLine}
+              parentItemId={product.id}
+              parentName={product.name}
+              parentPartNumber={product.partNumber}
               parentKind="product"
             />
           ) : (
