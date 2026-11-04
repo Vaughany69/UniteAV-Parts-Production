@@ -360,10 +360,37 @@ model User {
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  invTxns        InventoryTxn[]
-  productionLogs ProductionLog[]
-  productionRuns ProductionRun[]
-  stocktakes     Stocktake[]
+  invTxns          InventoryTxn[]
+  productionLogs   ProductionLog[]
+  productionRuns   ProductionRun[]
+  stocktakes       Stocktake[]
   stocktakeEntries StocktakeEntry[]
-  priceHistory   PriceHistory[]
+  priceHistory     PriceHistory[]
+  passwordResets   PasswordResetToken[]
+}
+
+/// One-time password reset. The emailed token is never stored — only its SHA-256 hash.
+/// `usedAt` is set when the link is used or replaced, so a token cannot be replayed.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Throttle rows for forgot-password. Email and IP are SHA-256 hashes, not the raw values.
+model PasswordResetAttempt {
+  id        String   @id @default(cuid())
+  emailHash String
+  ipHash    String
+  createdAt DateTime @default(now())
+
+  @@index([emailHash, createdAt])
+  @@index([ipHash, createdAt])
 }

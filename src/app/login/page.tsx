@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { btnPrimary, btnGhost, input } from "@/components/ui";
@@ -58,7 +59,16 @@ export default function LoginPage() {
               required
             />
           </div>
-          {error && <p className="text-sm text-critical">{error}</p>}
+          <div className="flex justify-end">
+            <Link href="/forgot-password" className="text-xs font-medium text-brand hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+          {error && (
+            <p className="text-sm text-critical" role="alert">
+              {error}
+            </p>
+          )}
           <button className={`${btnPrimary} w-full`} disabled={loading}>
             {loading ? "Signing in…" : "Sign in"}
           </button>
