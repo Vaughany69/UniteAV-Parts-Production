@@ -7,6 +7,7 @@ import { requireRole } from "@/lib/rbac";
 import { roleAtLeast } from "@/lib/constants";
 import { applyTxn } from "@/lib/inventory";
 import { setItemCost } from "@/lib/pricing";
+import { costChangeRecordsHistory, historySupplierForPo, SUPPLIER_GONE } from "@/lib/price-supplier";
 import { getToOrderBySupplier, getSettings } from "@/lib/metrics";
 import { nextPoNumber, orderCurrencyFor, toOrderCurrency, toHomeCurrency } from "@/lib/po-create";
 import type { ActionResult } from "@/lib/actions";
@@ -79,18 +80,47 @@ async function applyLinePrices(
   formData: FormData,
   note: string,
   fxToHome: number,
-  userId?: string | null,
-): Promise<void> {
+  userId: string | null | undefined,
+  supplierId: string | null,
+): Promise<string | null> {
+  const pending: { id: string; itemId: string; lineCost: number; nextCost: number; home: number }[] = [];
   for (const line of lines) {
     const raw = formData.get(`cost_${line.id}`);
     if (raw == null || String(raw).trim() === "") continue;
     const cost = Number(raw);
     if (!Number.isFinite(cost) || cost < 0) continue;
-    if (cost !== line.unitCost) {
-      await prisma.purchaseOrderLine.update({ where: { id: line.id }, data: { unitCost: cost } });
-    }
-    await setItemCost(line.itemId, toHomeCurrency(cost, fxToHome), note, userId);
+    pending.push({
+      id: line.id,
+      itemId: line.itemId,
+      lineCost: line.unitCost,
+      nextCost: cost,
+      home: toHomeCurrency(cost, fxToHome),
+    });
   }
+  if (pending.length === 0) return null;
+
+  // Check every line before writing any of them, so a missing supplier doesn't
+  // leave half the order repriced and the rest untouched.
+  const items = await prisma.item.findMany({
+    where: { id: { in: [...new Set(pending.map((p) => p.itemId))] } },
+    select: { id: true, unitCost: true },
+  });
+  const current = new Map(items.map((i) => [i.id, i.unitCost]));
+  const writesHistory = pending.some((p) => costChangeRecordsHistory(current.get(p.itemId), p.home));
+  if (writesHistory) {
+    const resolved = historySupplierForPo(supplierId);
+    if (!resolved.ok) return resolved.error;
+    const supplier = await prisma.supplier.findUnique({ where: { id: resolved.supplierId }, select: { id: true } });
+    if (!supplier) return SUPPLIER_GONE;
+  }
+
+  for (const line of pending) {
+    if (line.nextCost !== line.lineCost) {
+      await prisma.purchaseOrderLine.update({ where: { id: line.id }, data: { unitCost: line.nextCost } });
+    }
+    await setItemCost(line.itemId, line.home, note, userId, supplierId);
+  }
+  return null;
 }
 
 /** Create a draft PO from the current To-Order suggestions for one supplier group. */
@@ -207,7 +237,8 @@ export async function updatePoLines(formData: FormData): Promise<void> {
     if (!Number.isFinite(qty) || qty < 0 || qty === line.qtyOrdered) continue;
     await prisma.purchaseOrderLine.update({ where: { id: line.id }, data: { qtyOrdered: qty } });
   }
-  await applyLinePrices(po.lines, formData, po.poNumber, po.fxToHome, user.id);
+  const priceError = await applyLinePrices(po.lines, formData, po.poNumber, po.fxToHome, user.id, po.supplierId);
+  if (priceError) refuse(poId, priceError);
   revalidatePo(poId);
 }
 
@@ -216,7 +247,8 @@ export async function savePoLinePrices(formData: FormData): Promise<void> {
   const user = await requireRole("MANAGER");
   const poId = String(formData.get("poId") ?? "");
   const po = await poForAction(poId, SENT, "Saving prices on a sent order");
-  await applyLinePrices(po.lines, formData, po.poNumber, po.fxToHome, user.id);
+  const priceError = await applyLinePrices(po.lines, formData, po.poNumber, po.fxToHome, user.id, po.supplierId);
+  if (priceError) refuse(poId, priceError);
   revalidatePo(poId);
 }
 
@@ -258,6 +290,13 @@ export async function addPoLine(formData: FormData): Promise<void> {
   // Previously an item number that matched nothing did nothing at all: the form cleared
   // and the line never appeared, which reads exactly like a broken button.
   if (!item) refuse(poId, `No part has the item number "${partNumber}". Check it on the Parts page.`);
+  const home = cost == null ? null : toHomeCurrency(cost, po.fxToHome);
+  if (costChangeRecordsHistory(item.unitCost, home)) {
+    const resolved = historySupplierForPo(po.supplierId);
+    if (!resolved.ok) refuse(poId, resolved.error);
+    const supplier = await prisma.supplier.findUnique({ where: { id: resolved.supplierId }, select: { id: true } });
+    if (!supplier) refuse(poId, SUPPLIER_GONE);
+  }
   {
     const existing = await prisma.purchaseOrderLine.findFirst({
       where: { purchaseOrderId: poId, itemId: item.id },
@@ -279,7 +318,7 @@ export async function addPoLine(formData: FormData): Promise<void> {
         },
       });
     }
-    if (cost != null) await setItemCost(item.id, toHomeCurrency(cost, po.fxToHome), po.poNumber, user.id);
+    if (cost != null) await setItemCost(item.id, toHomeCurrency(cost, po.fxToHome), po.poNumber, user.id, po.supplierId);
   }
   revalidatePo(poId);
 }
@@ -441,8 +480,11 @@ export async function receivePo(formData: FormData): Promise<void> {
   const poId = String(formData.get("poId") ?? "");
   const po = await poForAction(poId, SENT, "Receiving");
 
-  // Managers may have edited prices in the same submit — apply those too.
-  if (roleAtLeast(user.role, "MANAGER")) await applyLinePrices(po.lines, formData, po.poNumber, po.fxToHome, user.id);
+  // Managers may have edited prices in the same submit — apply those too, before any stock moves.
+  if (roleAtLeast(user.role, "MANAGER")) {
+    const priceError = await applyLinePrices(po.lines, formData, po.poNumber, po.fxToHome, user.id, po.supplierId);
+    if (priceError) refuse(po.id, priceError);
+  }
 
   const receipts = po.lines
     .map((line) => ({ lineId: line.id, itemId: line.itemId, qty: receivedQty(formData, line.id) }))
@@ -466,7 +508,10 @@ export async function receivePoLine(lineId: string, formData: FormData): Promise
 
   const line = po.lines.find((l) => l.id === lineId);
   if (!line) refuse(po.id, "That line is not on this order.");
-  if (roleAtLeast(user.role, "MANAGER")) await applyLinePrices([line], formData, po.poNumber, po.fxToHome, user.id);
+  if (roleAtLeast(user.role, "MANAGER")) {
+    const priceError = await applyLinePrices([line], formData, po.poNumber, po.fxToHome, user.id, po.supplierId);
+    if (priceError) refuse(po.id, priceError);
+  }
 
   // Blank box on the line being received = receive the rest of it.
   const qty = receivedQty(formData, lineId) ?? Math.max(0, line.qtyOrdered - line.qtyReceived);
@@ -485,7 +530,10 @@ export async function receivePoRemaining(formData: FormData): Promise<void> {
   const poId = String(formData.get("poId") ?? "");
   const po = await poForAction(poId, SENT, "Receiving");
 
-  if (roleAtLeast(user.role, "MANAGER")) await applyLinePrices(po.lines, formData, po.poNumber, po.fxToHome, user.id);
+  if (roleAtLeast(user.role, "MANAGER")) {
+    const priceError = await applyLinePrices(po.lines, formData, po.poNumber, po.fxToHome, user.id, po.supplierId);
+    if (priceError) refuse(po.id, priceError);
+  }
 
   const receipts = po.lines
     .map((line) => ({ lineId: line.id, itemId: line.itemId, qty: Math.max(0, line.qtyOrdered - line.qtyReceived) }))

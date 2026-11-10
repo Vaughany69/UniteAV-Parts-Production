@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 import { categoryFromPartNumber } from "@/lib/constants";
 import { clean } from "@/lib/bom/parse";
+import { PRICE_SUPPLIER_REQUIRED, PriceSupplierRequiredError, normalizeSupplierId, SUPPLIER_GONE } from "@/lib/price-supplier";
 
 /**
  * The "Encode Decode Top Level" purchasing sheet: a flat, sectioned rollup that —
@@ -148,8 +149,16 @@ export interface TopLevelApplySummary {
  */
 export async function applyTopLevel(
   parse: TopLevelParse,
-  opts: { userId?: string; preserveStockFor?: Set<string> } = {},
+  opts: { userId?: string; preserveStockFor?: Set<string>; supplierId?: string | null; requireSupplier?: boolean } = {},
 ): Promise<TopLevelApplySummary> {
+  // The in-app import sets requireSupplier. Maintenance scripts that load a sheet with
+  // no supplier column omit it, and those rows stay blank like older history.
+  const supplierId = normalizeSupplierId(opts.supplierId);
+  if (opts.requireSupplier && !supplierId) throw new PriceSupplierRequiredError(PRICE_SUPPLIER_REQUIRED);
+  if (supplierId) {
+    const supplier = await prisma.supplier.findUnique({ where: { id: supplierId }, select: { id: true } });
+    if (!supplier) throw new PriceSupplierRequiredError(SUPPLIER_GONE);
+  }
   // First occurrence per part carries the authoritative cost + stock.
   const byPart = new Map<string, TopLevelPart>();
   for (const p of parse.parts) if (!byPart.has(p.partNumber)) byPart.set(p.partNumber, p);
@@ -186,6 +195,7 @@ export async function applyTopLevel(
           previousCost: item.unitCost,
           note: "BOM import",
           userId: opts.userId ?? null,
+          supplierId,
         },
       });
       costUpdated++;

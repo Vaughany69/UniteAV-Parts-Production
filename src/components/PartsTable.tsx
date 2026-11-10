@@ -6,6 +6,7 @@ import type { PartRow } from "@/lib/metrics";
 import { StatusBadge, input } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
 import { bulkUpdateParts } from "@/lib/actions";
+import { bulkFormSupplierError } from "@/lib/price-supplier";
 import { DeleteItemButton } from "@/components/DeleteItemButton";
 import { fmtNum, fmtCost } from "@/lib/format";
 
@@ -51,6 +52,26 @@ export function PartsTable({
             action={bulkUpdateParts}
             submitLabel={`Apply to ${selected.size}`}
             className="flex flex-wrap items-end gap-2"
+            onSubmit={(e) => {
+              const data = new FormData(e.currentTarget);
+              const message = bulkFormSupplierError(
+                String(data.get("supplierId") ?? ""),
+                rows
+                  .filter((r) => selected.has(r.id))
+                  .map((r) => ({ id: r.id, supplierId: r.supplierId, unitCost: r.unitCost })),
+                String(data.get("unitCost") ?? ""),
+              );
+              const select = e.currentTarget.elements.namedItem("supplierId");
+              if (select instanceof HTMLSelectElement) {
+                select.setCustomValidity(message);
+                if (message) {
+                  e.preventDefault();
+                  select.reportValidity();
+                }
+              } else if (message) {
+                e.preventDefault();
+              }
+            }}
           >
             <input type="hidden" name="ids" value={[...selected].join(",")} />
             <Field label="Supplier">
@@ -77,7 +98,10 @@ export function PartsTable({
               <input className={`${input} w-24`} name="unitCost" type="number" min="0" step="any" placeholder="—" />
             </Field>
           </ActionForm>
-          <p className="mt-1 text-xs text-muted">Blank fields are left unchanged.</p>
+          <p className="mt-1 text-xs text-muted">
+            Blank fields are left unchanged. A unit cost change needs a supplier — pick one here, or leave supplier
+            unchanged when every part whose price changes already has one.
+          </p>
         </div>
       )}
 

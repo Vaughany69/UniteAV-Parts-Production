@@ -5,14 +5,14 @@ import { roleAtLeast } from "@/lib/constants";
 import { importBomAction, importTopLevelAction } from "@/lib/actions";
 import { ActionForm } from "@/components/ActionForm";
 import { ImportBomForm } from "@/components/ImportBomForm";
-import { Card, EmptyState, Badge } from "@/components/ui";
+import { Card, EmptyState, Badge, input } from "@/components/ui";
 import { fmtDate, fmtNum } from "@/lib/format";
 
 export default async function ImportPage() {
   const user = await currentUser();
   if (!roleAtLeast(user?.role, "MANAGER")) redirect("/");
 
-  const [batches, products, boardRows] = await Promise.all([
+  const [batches, products, boardRows, suppliers] = await Promise.all([
     prisma.importBatch.findMany({ orderBy: { createdAt: "desc" }, take: 15 }),
     prisma.item.findMany({
       where: { type: "PRODUCT", active: true },
@@ -32,6 +32,7 @@ export default async function ImportPage() {
         bomChildren: { select: { parentItemId: true } },
       },
     }),
+    prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
   const boards = boardRows.map((b) => ({
     id: b.id,
@@ -99,6 +100,20 @@ export default async function ImportPage() {
                 accept=".xlsx,.xls,.csv"
                 required
               />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-ink-2">Supplier</span>
+              <select className={input} name="supplierId" defaultValue="" required>
+                <option value="">— Choose a supplier —</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-xs text-muted">
+                Prices this sheet changes are recorded on price history against this supplier.
+              </span>
             </label>
           </ActionForm>
         </div>

@@ -11,7 +11,9 @@ import { Card, StatTile, StatusBadge, Badge, EmptyState, input } from "@/compone
 import { BackLink } from "@/components/ListMemory";
 import { DeleteItemButton } from "@/components/DeleteItemButton";
 import { RenamePartForm } from "@/components/RenamePartForm";
+import { PartPlanningFields } from "@/components/PartPlanningFields";
 import { fmtNum, fmtCost, fmtDate } from "@/lib/format";
+import { supplierLabel } from "@/lib/price-supplier";
 
 export default async function PartDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,7 +34,10 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
       where: { itemId: id },
       orderBy: { createdAt: "desc" },
       take: 20,
-      include: { user: { select: { name: true, email: true } } },
+      include: {
+        user: { select: { name: true, email: true } },
+        supplier: { select: { name: true } },
+      },
     }),
   ]);
   if (!item) notFound();
@@ -74,7 +79,7 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
         </div>
       </header>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <StatTile
           label="On hand"
           value={fmtNum(item.onHand)}
@@ -97,6 +102,12 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
           label="Suggested order"
           value={p ? fmtNum(p.reorder.suggestedOrderQty) : "—"}
           tone={p && p.reorder.suggestedOrderQty > 0 ? "warn" : "default"}
+        />
+        <StatTile
+          label="On order"
+          value={p ? fmtNum(p.onOrderQty) : "—"}
+          hint="ordered − received"
+          title="Outstanding quantity on sent purchase orders (ordered or partial): quantity ordered minus quantity already received. Drafts, fully received orders, and cancelled orders are not included."
         />
       </div>
 
@@ -143,37 +154,16 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
           {canEdit ? (
             <ActionForm action={updatePart} submitLabel="Save planning" className="space-y-3 p-4">
               <input type="hidden" name="itemId" value={item.id} />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Lead time (days)">
-                  <input className={input} name="leadTimeDays" type="number" min="0" defaultValue={item.leadTimeDays ?? ""} />
-                </Field>
-                <Field label="Safety stock">
-                  <input className={input} name="safetyStock" type="number" min="0" step="any" defaultValue={item.safetyStock} />
-                </Field>
-                <Field label="Pack / MOQ">
-                  <input className={input} name="minPackQty" type="number" min="1" step="any" defaultValue={item.minPackQty} />
-                </Field>
-                <Field label="Unit cost">
-                  <input className={input} name="unitCost" type="number" min="0" step="any" defaultValue={item.unitCost ?? ""} />
-                </Field>
-              </div>
-              <Field label="Supplier">
-                {/* Keyed so the form reset after a save lands on the saved supplier rather
-                    than the one this select mounted with. */}
-                <select
-                  key={item.supplierId ?? "unassigned"}
-                  className={input}
-                  name="supplierId"
-                  defaultValue={item.supplierId ?? ""}
-                >
-                  <option value="">— Unassigned —</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              {/* Keyed so a save remounts the fields on the stored cost and supplier. */}
+              <PartPlanningFields
+                key={`${item.unitCost ?? ""}:${item.supplierId ?? ""}:${item.leadTimeDays ?? ""}:${item.safetyStock}:${item.minPackQty}`}
+                leadTimeDays={item.leadTimeDays}
+                safetyStock={item.safetyStock}
+                minPackQty={item.minPackQty}
+                unitCost={item.unitCost}
+                supplierId={item.supplierId}
+                suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))}
+              />
             </ActionForm>
           ) : (
             <dl className="grid grid-cols-2 gap-3 p-4 text-sm">
@@ -246,6 +236,7 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
                     <th className="px-4 py-2 text-right font-medium">Price</th>
                     <th className="px-4 py-2 text-right font-medium">Change</th>
                     <th className="px-4 py-2 font-medium">Source</th>
+                    <th className="px-4 py-2 font-medium">Supplier</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -276,6 +267,7 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
                           {h.note ?? "—"}
                           {h.user && <span className="text-xs text-muted"> · {h.user.name ?? h.user.email}</span>}
                         </td>
+                        <td className="px-4 py-2 text-ink-2">{supplierLabel(h.supplier?.name)}</td>
                       </tr>
                     );
                   })}
