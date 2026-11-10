@@ -7,6 +7,15 @@ import { ROLES, ORDER_CURRENCIES } from "@/lib/constants";
 import { requireRole } from "@/lib/rbac";
 import { applyTxn } from "@/lib/inventory";
 import { logPriceChange } from "@/lib/pricing";
+import {
+  historySupplierForManual,
+  historySuppliersForBulk,
+  INVALID_COST,
+  normalizeSupplierId,
+  parseNonNegativeCost,
+  PRICE_SUPPLIER_REQUIRED,
+  SUPPLIER_GONE,
+} from "@/lib/price-supplier";
 import { parseBomFile } from "@/lib/bom/parse";
 import { importBom, productMetaFromFilename } from "@/lib/bom/import";
 import { parseTopLevel, applyTopLevel } from "@/lib/bom/toplevel";
@@ -199,10 +208,27 @@ export async function updatePart(_prev: ActionResult | null, formData: FormData)
 
     const leadRaw = String(formData.get("leadTimeDays") ?? "").trim();
     const costRaw = String(formData.get("unitCost") ?? "").trim();
-    const supplierId = String(formData.get("supplierId") ?? "").trim();
-    const newCost = costRaw === "" ? null : Math.max(0, Number(costRaw));
+    const supplierRaw = String(formData.get("supplierId") ?? "");
+    const parsedCost = parseNonNegativeCost(costRaw);
+    if (parsedCost === "invalid") return { ok: false, error: INVALID_COST };
+    const newCost = parsedCost;
+    const supplierId = normalizeSupplierId(supplierRaw);
 
     const prev = await prisma.item.findUnique({ where: { id: itemId }, select: { unitCost: true } });
+    if (!prev) return { ok: false, error: "Part not found." };
+
+    // A cost edit appends a price-history row, and that row has to name a supplier.
+    // Leaving the cost alone still allows the part to stay unassigned.
+    const recordsPrice = newCost != null && newCost !== prev.unitCost;
+    let historySupplierId: string | null = null;
+    if (recordsPrice) {
+      const resolved = historySupplierForManual(supplierId);
+      if (!resolved.ok) return resolved;
+      const supplier = await prisma.supplier.findUnique({ where: { id: resolved.supplierId }, select: { id: true } });
+      if (!supplier) return { ok: false, error: SUPPLIER_GONE };
+      historySupplierId = resolved.supplierId;
+    }
+
     await prisma.item.update({
       where: { id: itemId },
       data: {
@@ -210,11 +236,11 @@ export async function updatePart(_prev: ActionResult | null, formData: FormData)
         safetyStock: Math.max(0, num(formData.get("safetyStock"))),
         minPackQty: Math.max(1, num(formData.get("minPackQty"), 1)),
         unitCost: newCost,
-        supplierId: supplierId === "" ? null : supplierId,
+        supplierId,
       },
     });
-    if (prev && newCost != null && newCost !== prev.unitCost) {
-      await logPriceChange(itemId, newCost, prev.unitCost, "Manual edit", user.id);
+    if (recordsPrice && historySupplierId) {
+      await logPriceChange(itemId, newCost!, prev.unitCost, "Manual edit", user.id, historySupplierId);
     }
 
     revalidatePath("/parts");
@@ -247,33 +273,52 @@ export async function bulkUpdateParts(_prev: ActionResult | null, formData: Form
     if (ss !== "") data.safetyStock = Math.max(0, Number(ss));
     const pack = String(formData.get("minPackQty") ?? "").trim();
     if (pack !== "") data.minPackQty = Math.max(1, Number(pack));
-    const cost = String(formData.get("unitCost") ?? "").trim();
-    if (cost !== "") data.unitCost = Math.max(0, Number(cost));
+    const costRaw = String(formData.get("unitCost") ?? "");
+    const parsedCost = parseNonNegativeCost(costRaw);
+    if (parsedCost === "invalid") return { ok: false, error: INVALID_COST };
+    if (parsedCost != null) data.unitCost = parsedCost;
 
     if (Object.keys(data).length === 0) return { ok: false, error: "Fill at least one field to apply." };
 
     // Snapshot previous costs so a bulk cost change lands in each part's price history.
     const prevCosts =
       typeof data.unitCost === "number"
-        ? await prisma.item.findMany({ where: { id: { in: ids } }, select: { id: true, unitCost: true } })
+        ? await prisma.item.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, unitCost: true, supplierId: true },
+          })
         : [];
+
+    let historyRows: { id: string; supplierId: string; previousCost: number | null }[] = [];
+    if (typeof data.unitCost === "number") {
+      const decision = historySuppliersForBulk({
+        formSupplierId: supplierId,
+        parts: prevCosts,
+        nextCost: data.unitCost,
+      });
+      if (!decision.ok) return { ok: false, error: decision.error || PRICE_SUPPLIER_REQUIRED };
+      historyRows = decision.rows;
+      if (historyRows.length > 0) {
+        const supplierIds = [...new Set(historyRows.map((r) => r.supplierId))];
+        const found = await prisma.supplier.findMany({ where: { id: { in: supplierIds } }, select: { id: true } });
+        if (found.length !== supplierIds.length) return { ok: false, error: SUPPLIER_GONE };
+      }
+    }
 
     const res = await prisma.item.updateMany({ where: { id: { in: ids } }, data });
 
-    if (typeof data.unitCost === "number") {
+    if (historyRows.length > 0 && typeof data.unitCost === "number") {
       const cost = data.unitCost;
-      const changed = prevCosts.filter((p) => p.unitCost !== cost);
-      if (changed.length > 0) {
-        await prisma.priceHistory.createMany({
-          data: changed.map((p) => ({
-            itemId: p.id,
-            unitCost: cost,
-            previousCost: p.unitCost,
-            note: "Bulk edit",
-            userId: user.id,
-          })),
-        });
-      }
+      await prisma.priceHistory.createMany({
+        data: historyRows.map((p) => ({
+          itemId: p.id,
+          unitCost: cost,
+          previousCost: p.previousCost,
+          note: "Bulk edit",
+          userId: user.id,
+          supplierId: p.supplierId,
+        })),
+      });
     }
     revalidatePath("/parts");
     revalidatePath("/to-order");
@@ -445,12 +490,18 @@ export async function importTopLevelAction(_prev: ActionResult | null, formData:
     const file = formData.get("file");
     if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose a top-level BOM file." };
 
+    // Every cost this sheet writes is a new price-history row, so it has to name a supplier.
+    const supplierId = normalizeSupplierId(String(formData.get("supplierId") ?? ""));
+    if (!supplierId) return { ok: false, error: PRICE_SUPPLIER_REQUIRED };
+    const supplier = await prisma.supplier.findUnique({ where: { id: supplierId }, select: { id: true } });
+    if (!supplier) return { ok: false, error: SUPPLIER_GONE };
+
     const buf = Buffer.from(await file.arrayBuffer());
     const parse = parseTopLevel(buf);
     if (parse.parts.length === 0)
       return { ok: false, error: `No parts found. ${parse.warnings.join(" ")}`.trim() };
 
-    const s = await applyTopLevel(parse, { userId: user.id });
+    const s = await applyTopLevel(parse, { userId: user.id, supplierId, requireSupplier: true });
     revalidatePath("/parts");
     revalidatePath("/to-order");
     revalidatePath("/import");

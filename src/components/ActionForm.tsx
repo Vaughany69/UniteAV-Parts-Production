@@ -10,16 +10,18 @@ export function ActionForm({
   submitLabel = "Save",
   className = "",
   submitClassName = btnPrimary,
+  onSubmit,
 }: {
   action: (prev: ActionResult | null, formData: FormData) => Promise<ActionResult>;
   children: React.ReactNode;
   submitLabel?: string;
   className?: string;
   submitClassName?: string;
+  onSubmit?: React.FormEventHandler<HTMLFormElement>;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
   return (
-    <form action={formAction} className={className}>
+    <form action={formAction} className={className} onSubmit={onSubmit}>
       {children}
       {state && state.ok === false && <p className="text-sm text-critical">{state.error}</p>}
       {state && state.ok === true && <p className="text-sm text-good">{state.message ?? "Done."}</p>}

@@ -292,7 +292,11 @@ export default async function PurchaseOrderDetail({
               <span className="text-xs text-muted">
                 Type what arrived and receive lines one at a time or together — anything left blank stays outstanding and
                 the PO shows as partially received. On-hand increases and the ledger records each receipt.
-                {canManage ? " Prices you enter update the part's cost across the dashboard." : ""}
+                {canManage && po.supplier
+                  ? ` Prices you change update the part's cost and are recorded under ${po.supplier.name}.`
+                  : canManage
+                    ? " Changing a price needs a supplier on this order. Return it to draft and assign one first."
+                    : ""}
               </span>
             </div>
           </form>
@@ -394,7 +398,9 @@ export default async function PurchaseOrderDetail({
               <div className="no-print flex items-center gap-2 border-t p-4">
                 <button className={btnPrimary}>Save lines</button>
                 <span className="text-xs text-muted">
-                  Prices you enter update the part&apos;s cost across the dashboard.
+                  {po.supplier
+                    ? `Prices you enter update the part's cost and are recorded under ${po.supplier.name}.`
+                    : "Assign a supplier above before changing a price. Price history requires one."}
                 </span>
               </div>
             )}

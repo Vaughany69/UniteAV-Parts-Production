@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { categoryFromPartNumber } from "@/lib/constants";
 import { setItemCost } from "@/lib/pricing";
+import { normalizeSupplierId, PRICE_SUPPLIER_REQUIRED, SUPPLIER_GONE } from "@/lib/price-supplier";
 
 /**
  * Creating a part, shared by the Parts page form and the add-to-BOM form so a part made
@@ -68,6 +69,14 @@ export async function createPartRecord(input: NewPartInput, userId?: string | nu
   if (!name) return { ok: false, error: "Description is required." };
   if (partNumber.length > 80) return { ok: false, error: "Item number is too long." };
 
+  const supplierId = normalizeSupplierId(input.supplierId);
+  const priced = input.unitCost != null && Number.isFinite(input.unitCost) && input.unitCost > 0;
+  if (priced && !supplierId) return { ok: false, error: PRICE_SUPPLIER_REQUIRED };
+  if (supplierId) {
+    const supplier = await prisma.supplier.findUnique({ where: { id: supplierId }, select: { id: true } });
+    if (!supplier) return { ok: false, error: SUPPLIER_GONE };
+  }
+
   const clash = await prisma.item.findUnique({
     where: { partNumber },
     select: { name: true, active: true },
@@ -90,14 +99,14 @@ export async function createPartRecord(input: NewPartInput, userId?: string | nu
       mpn: input.mpn ?? null,
       uom: input.uom ?? "each",
       notes: input.notes ?? null,
-      supplierId: input.supplierId ?? null,
+      supplierId,
       leadTimeDays: input.leadTimeDays ?? null,
       safetyStock: Math.max(0, input.safetyStock ?? 0),
       minPackQty: Math.max(1, input.minPackQty ?? 1),
     },
   });
   // Through setItemCost so a hand-made part starts with a price-history entry like any other.
-  if (input.unitCost != null && input.unitCost > 0) await setItemCost(item.id, input.unitCost, "Created by hand", userId);
+  if (priced && supplierId) await setItemCost(item.id, input.unitCost!, "Created by hand", userId, supplierId);
 
   return { ok: true, id: item.id, partNumber };
 }

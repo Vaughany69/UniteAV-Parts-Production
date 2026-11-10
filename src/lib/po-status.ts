@@ -14,7 +14,12 @@
 
 /** Statuses in which the lines, quantities, prices and supplier can still change. */
 export const EDITABLE = ["DRAFT"];
-/** Sent to the supplier, so goods can arrive against it. */
+/**
+ * Sent to the supplier, so goods can arrive against it.
+ *
+ * This is also what "On order" counts: ordered minus received on these statuses.
+ * A draft has not been sent. A received order is fully in. A cancelled order is not coming.
+ */
 export const SENT = ["ORDERED", "PARTIAL"];
 /** Anything short of fully received. */
 export const CANCELLABLE = ["DRAFT", "ORDERED", "PARTIAL"];

@@ -97,6 +97,7 @@ model Supplier {
 
   items          Item[]
   purchaseOrders PurchaseOrder[]
+  priceHistory   PriceHistory[]
 }
 
 /// A purchase order to a supplier. Receiving its lines auto-updates on-hand stock.
@@ -287,20 +288,28 @@ model ExplodedBom {
 
 /// Price change log per part — appended whenever Item.unitCost changes
 /// (PO pricing, manual/bulk edits, BOM imports).
+///
+/// `supplierId` is nullable so rows written before this column existed still load.
+/// New prices entered in the app, and prices flowed from a purchase order, must
+/// name a supplier. Sheet-import scripts that have no supplier record may leave it blank.
 model PriceHistory {
   id           String  @id @default(cuid())
   itemId       String
   unitCost     Float
   previousCost Float?
   note         String? // source, e.g. "PO-0003", "Manual edit", "BOM import"
+  /// Who this price came from. Null on legacy rows and on imports that name no supplier.
+  supplierId   String?
   userId       String?
 
   createdAt DateTime @default(now())
 
-  item Item  @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  user User? @relation(fields: [userId], references: [id])
+  item     Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  user     User?     @relation(fields: [userId], references: [id])
 
   @@index([itemId])
+  @@index([supplierId])
 }
 
 /// Record of each BOM file import (for history / re-import).

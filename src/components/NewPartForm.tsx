@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { createPart, type PartResult } from "@/lib/part-actions";
 import { btnPrimary, input } from "@/components/ui";
+import { createFormNeedsSupplier } from "@/lib/price-supplier";
 
 /**
  * Create a part by hand. Folded away by default — the Parts page is a working list, not a
@@ -11,6 +12,8 @@ import { btnPrimary, input } from "@/components/ui";
 export function NewPartForm({ suppliers }: { suppliers: { id: string; name: string }[] }) {
   const [state, formAction, pending] = useActionState<PartResult | null, FormData>(createPart, null);
   const [open, setOpen] = useState(false);
+  const [unitCost, setUnitCost] = useState("");
+  const needsSupplier = createFormNeedsSupplier(unitCost);
 
   if (!open) {
     return (
@@ -56,11 +59,19 @@ export function NewPartForm({ suppliers }: { suppliers: { id: string; name: stri
           <input className={input} name="uom" placeholder="each" />
         </Field>
         <Field label="Unit cost">
-          <input className={input} name="unitCost" type="number" min="0" step="any" />
+          <input
+            className={input}
+            name="unitCost"
+            type="number"
+            min="0"
+            step="any"
+            value={unitCost}
+            onChange={(e) => setUnitCost(e.target.value)}
+          />
         </Field>
         <Field label="Supplier">
-          <select className={input} name="supplierId" defaultValue="">
-            <option value="">— none —</option>
+          <select className={input} name="supplierId" defaultValue="" required={needsSupplier}>
+            <option value="">{needsSupplier ? "— Choose a supplier —" : "— none —"}</option>
             {suppliers.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}

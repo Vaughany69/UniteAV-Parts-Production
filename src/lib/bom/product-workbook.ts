@@ -4,6 +4,7 @@ import { categoryFromPartNumber } from "@/lib/constants";
 import { clean, parseWorkbookSheet } from "@/lib/bom/parse";
 import { importBom } from "@/lib/bom/import";
 import { explodeProduct } from "@/lib/bom/explode";
+import { matchSupplierByNote } from "@/lib/price-supplier";
 
 /**
  * A "product workbook" is one .xlsx per finished product: a chassis rollup sheet plus one
@@ -326,6 +327,8 @@ export async function importProductWorkbook(
     select: { id: true, partNumber: true },
   });
   const chassisById = new Map(chassisExisting.map((i) => [i.partNumber, i.id]));
+  // Chassis notes sometimes name a supplier already in the app. Exact name only.
+  const knownSuppliers = await prisma.supplier.findMany({ select: { id: true, name: true } });
 
   for (const c of chassis.rows) {
     let itemId = chassisById.get(c.partNumber);
@@ -351,7 +354,15 @@ export async function importProductWorkbook(
 
       if (c.unitCost != null) {
         await prisma.priceHistory.create({
-          data: { itemId, unitCost: c.unitCost, previousCost: null, note: "BOM import", userId: opts.userId ?? null },
+          data: {
+            itemId,
+            unitCost: c.unitCost,
+            previousCost: null,
+            note: "BOM import",
+            userId: opts.userId ?? null,
+            // A note that isn't an existing supplier stays blank — this sheet isn't an order.
+            supplierId: matchSupplierByNote(c.supplierNote, knownSuppliers),
+          },
         });
       }
       // Booked through the ledger too, so on-hand stays explainable (sum of txns).

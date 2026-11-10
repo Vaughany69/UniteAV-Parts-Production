@@ -2,6 +2,7 @@ import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { computeReorder, type ReorderResult } from "@/lib/reorder";
+import { SENT } from "@/lib/po-status";
 import { loadBomTree } from "@/lib/bom/rollup";
 import { planRun } from "@/lib/production/netting";
 
@@ -98,7 +99,7 @@ export interface PartRow {
 export const getOnOrderQtyMap = cache(async (): Promise<Map<string, number>> => {
   const grouped = await prisma.purchaseOrderLine.groupBy({
     by: ["itemId"],
-    where: { purchaseOrder: { status: { in: ["ORDERED", "PARTIAL"] } } },
+    where: { purchaseOrder: { status: { in: SENT } } },
     _sum: { qtyOrdered: true, qtyReceived: true },
   });
   const map = new Map<string, number>();
@@ -220,7 +221,7 @@ export async function getPartRow(id: string): Promise<PartRow | null> {
     }),
     prisma.purchaseOrderLine.aggregate({
       _sum: { qtyOrdered: true, qtyReceived: true },
-      where: { itemId: id, purchaseOrder: { status: { in: ["ORDERED", "PARTIAL"] } } },
+      where: { itemId: id, purchaseOrder: { status: { in: SENT } } },
     }),
   ]);
   if (!item) return null;

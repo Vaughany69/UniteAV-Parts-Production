@@ -96,7 +96,9 @@ async function main() {
       if (cost == null) continue;
       const item = await prisma.item.findUnique({ where: { partNumber: f.partNumber }, select: { id: true } });
       if (!item) continue;
-      await setItemCost(item.id, cost, `BOM import — ${b.file}`);
+      // The sheet has no supplier column. requireSupplier is off so the row is stored
+      // blank, the same way older price history is, instead of inventing a vendor.
+      await setItemCost(item.id, cost, `BOM import — ${b.file}`, null, null, false);
       priced++;
     }
     console.log(`  priced ${priced} newly-created part(s) from the sheet`);

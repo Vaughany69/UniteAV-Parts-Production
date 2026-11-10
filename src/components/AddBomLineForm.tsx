@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { addBomLine, type BomResult } from "@/lib/bom-actions";
 import { btnPrimary, input } from "@/components/ui";
+import { createFormNeedsSupplier } from "@/lib/price-supplier";
 
 /**
  * Add a line to this BOM, either from the catalogue or by creating the part here.
@@ -28,6 +29,8 @@ export function AddBomLineForm({
   const [state, formAction, pending] = useActionState<BomResult | null, FormData>(addBomLine, null);
   const [mode, setMode] = useState<"existing" | "new">("existing");
   const [typed, setTyped] = useState("");
+  const [unitCost, setUnitCost] = useState("");
+  const needsSupplier = createFormNeedsSupplier(unitCost);
   const listId = `bom-add-${parentItemId}`;
 
   const known = useMemo(() => new Map(options.map((o) => [o.partNumber, o.name])), [options]);
@@ -136,11 +139,19 @@ export function AddBomLineForm({
               <input className={input} name="mpn" />
             </Field>
             <Field label="Unit cost">
-              <input className={input} name="unitCost" type="number" min="0" step="any" />
+              <input
+                className={input}
+                name="unitCost"
+                type="number"
+                min="0"
+                step="any"
+                value={unitCost}
+                onChange={(e) => setUnitCost(e.target.value)}
+              />
             </Field>
             <Field label="Supplier">
-              <select className={input} name="supplierId" defaultValue="">
-                <option value="">— none —</option>
+              <select className={input} name="supplierId" defaultValue="" required={needsSupplier}>
+                <option value="">{needsSupplier ? "— Choose a supplier —" : "— none —"}</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}

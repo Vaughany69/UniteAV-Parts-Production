@@ -40,6 +40,10 @@ for (const s of STATUSES) check(`${s} editable`, allows(EDITABLE, s), s === "DRA
 console.log("\nWho may receive goods (sent only)");
 for (const s of STATUSES) check(`${s} receivable`, allows(SENT, s), s === "ORDERED" || s === "PARTIAL");
 
+console.log("\nOn order counts sent orders only (ordered or partial)");
+check("on order statuses", SENT, ["ORDERED", "PARTIAL"]);
+for (const s of ["DRAFT", "RECEIVED", "CANCELLED"]) check(`${s} is not on order`, SENT.includes(s), false);
+
 console.log("\nWho may be cancelled (anything short of received)");
 for (const s of STATUSES)
   check(`${s} cancellable`, allows(CANCELLABLE, s), s === "DRAFT" || s === "ORDERED" || s === "PARTIAL");
