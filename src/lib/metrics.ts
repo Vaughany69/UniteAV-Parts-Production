@@ -173,6 +173,27 @@ export function groupOnOrderSources(lines: OnOrderSourceLine[]): Map<string, OnO
   return result;
 }
 
+const onOrderSourceSelect = {
+  itemId: true,
+  qtyOrdered: true,
+  qtyReceived: true,
+  purchaseOrder: {
+    select: {
+      id: true,
+      poNumber: true,
+      supplier: { select: { name: true } },
+    },
+  },
+} as const;
+
+/** Sent orders only. A draft, a received order, and a cancelled order are not on order. */
+function sentOrderLinesWhere(itemId?: string) {
+  return {
+    ...(itemId ? { itemId } : {}),
+    purchaseOrder: { status: { in: SENT } },
+  };
+}
+
 /**
  * Who each part is on order with.
  *
@@ -182,21 +203,19 @@ export function groupOnOrderSources(lines: OnOrderSourceLine[]): Map<string, OnO
  */
 export const getOnOrderSources = cache(async (): Promise<Map<string, OnOrderSource[]>> => {
   const lines = await prisma.purchaseOrderLine.findMany({
-    where: { purchaseOrder: { status: { in: SENT } } },
-    select: {
-      itemId: true,
-      qtyOrdered: true,
-      qtyReceived: true,
-      purchaseOrder: {
-        select: {
-          id: true,
-          poNumber: true,
-          supplier: { select: { name: true } },
-        },
-      },
-    },
+    where: sentOrderLinesWhere(),
+    select: onOrderSourceSelect,
   });
   return groupOnOrderSources(lines);
+});
+
+/** Open orders for one part, grouped the same way as getOnOrderSources. */
+export const getOnOrderSourcesForItem = cache(async (itemId: string): Promise<OnOrderSource[]> => {
+  const lines = await prisma.purchaseOrderLine.findMany({
+    where: sentOrderLinesWhere(itemId),
+    select: onOrderSourceSelect,
+  });
+  return groupOnOrderSources(lines).get(itemId) ?? [];
 });
 
 const partItemInclude = {
