@@ -110,6 +110,95 @@ export const getOnOrderQtyMap = cache(async (): Promise<Map<string, number>> => 
   return map;
 });
 
+/** One sent purchase order that still has some of a part coming in. */
+export interface OnOrderSource {
+  poId: string;
+  poNumber: string;
+  supplierName: string;
+  /** Still to arrive on this purchase order: ordered − received. */
+  qty: number;
+}
+
+type OnOrderSourceLine = {
+  itemId: string;
+  qtyOrdered: number;
+  qtyReceived: number;
+  purchaseOrder: {
+    id: string;
+    poNumber: string;
+    supplier: { name: string } | null;
+  };
+};
+
+/**
+ * Collapse sent-order lines into one entry per purchase order, per part.
+ *
+ * A part can sit on more than one line of the same order; those outstanding
+ * quantities add up, the same way getOnOrderQtyMap sums ordered minus received.
+ * Lines that are already fully received contribute nothing.
+ */
+export function groupOnOrderSources(lines: OnOrderSourceLine[]): Map<string, OnOrderSource[]> {
+  const byItem = new Map<string, Map<string, OnOrderSource>>();
+  for (const line of lines) {
+    const qty = line.qtyOrdered - line.qtyReceived;
+    if (qty <= 0) continue;
+    const po = line.purchaseOrder;
+    let byPo = byItem.get(line.itemId);
+    if (!byPo) {
+      byPo = new Map();
+      byItem.set(line.itemId, byPo);
+    }
+    const existing = byPo.get(po.id);
+    if (existing) {
+      existing.qty += qty;
+    } else {
+      byPo.set(po.id, {
+        poId: po.id,
+        poNumber: po.poNumber,
+        supplierName: po.supplier?.name ?? "Unassigned supplier",
+        qty,
+      });
+    }
+  }
+
+  const result = new Map<string, OnOrderSource[]>();
+  for (const [itemId, byPo] of byItem) {
+    result.set(
+      itemId,
+      [...byPo.values()].sort(
+        (a, b) => a.supplierName.localeCompare(b.supplierName) || a.poNumber.localeCompare(b.poNumber),
+      ),
+    );
+  }
+  return result;
+}
+
+/**
+ * Who each part is on order with.
+ *
+ * The same orders the On order quantity counts: sent purchase orders (ORDERED or
+ * PARTIAL) with something still outstanding. A draft has not been sent, a received
+ * order is fully in, and a cancelled order is not coming, so none of those appear.
+ */
+export const getOnOrderSources = cache(async (): Promise<Map<string, OnOrderSource[]>> => {
+  const lines = await prisma.purchaseOrderLine.findMany({
+    where: { purchaseOrder: { status: { in: SENT } } },
+    select: {
+      itemId: true,
+      qtyOrdered: true,
+      qtyReceived: true,
+      purchaseOrder: {
+        select: {
+          id: true,
+          poNumber: true,
+          supplier: { select: { name: true } },
+        },
+      },
+    },
+  });
+  return groupOnOrderSources(lines);
+});
+
 const partItemInclude = {
   supplier: { select: { name: true } },
   _count: { select: { bomChildren: true } }, // lines where this item is the child (i.e. used by a product)
