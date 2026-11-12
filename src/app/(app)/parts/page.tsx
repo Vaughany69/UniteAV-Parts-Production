@@ -32,15 +32,14 @@ export default async function PartsPage({
   searchParams: Promise<{ q?: string; status?: string }>;
 }) {
   const { q = "", status = "all" } = await searchParams;
-  // Suppliers come from the sent orders that make a part "on order". Other filters
-  // don't need that list, so it stays off their render.
-  const onOrderView = status === "ON_ORDER";
+  // One read for the whole list: who each part is still coming from, on every filter.
+  // Parts with nothing outstanding get an empty list and render as a dash.
   const [rows, settings, suppliers, user, onOrderSources] = await Promise.all([
     getPartRows(),
     getSettings(),
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     currentUser(),
-    onOrderView ? getOnOrderSources() : Promise.resolve(null),
+    getOnOrderSources(),
   ]);
   const canEdit = roleAtLeast(user?.role, "MANAGER");
   const canDelete = roleAtLeast(user?.role, "ADMIN");
@@ -122,11 +121,7 @@ export default async function PartsPage({
             currency={settings.currency}
             canEdit={canEdit}
             canDelete={canDelete}
-            orderSources={
-              onOrderSources
-                ? Object.fromEntries(filtered.map((p) => [p.id, onOrderSources.get(p.id) ?? []]))
-                : undefined
-            }
+            orderSources={Object.fromEntries(filtered.map((p) => [p.id, onOrderSources.get(p.id) ?? []]))}
           />
         )}
       </Card>
