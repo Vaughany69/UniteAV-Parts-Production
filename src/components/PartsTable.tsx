@@ -23,8 +23,8 @@ export function PartsTable({
   currency: string;
   canEdit: boolean;
   canDelete: boolean;
-  /** Set on the On order filter: who each part is still coming from. */
-  orderSources?: Record<string, OnOrderSource[]>;
+  /** Who each part is still coming from. An empty list renders as a dash. */
+  orderSources: Record<string, OnOrderSource[]>;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const allSelected = rows.length > 0 && selected.size === rows.length;
@@ -126,14 +126,12 @@ export function PartsTable({
               >
                 On order
               </th>
-              {orderSources && (
-                <th
-                  className="px-4 py-2.5 font-medium"
-                  title="Supplier on each sent purchase order (ordered or partial) that still has some of this part outstanding, with the purchase order and the quantity still to come."
-                >
-                  On order with
-                </th>
-              )}
+              <th
+                className="px-4 py-2.5 font-medium"
+                title="Supplier on each sent purchase order (ordered or partial) that still has some of this part outstanding, with the purchase order and the quantity still to come."
+              >
+                On order with
+              </th>
               <th
                 className="px-4 py-2.5 text-right font-medium"
                 title="Reorder point = avg daily use × lead time + safety stock. Reorder when on-hand drops to this."
@@ -192,11 +190,9 @@ export function PartsTable({
                 <td className="px-4 py-2.5 text-right tnum">
                   {p.onOrderQty > 0 ? <span className="font-medium text-brand">{fmtNum(p.onOrderQty)}</span> : "—"}
                 </td>
-                {orderSources && (
-                  <td className="px-4 py-2.5">
-                    <OrderSources sources={orderSources[p.id] ?? []} />
-                  </td>
-                )}
+                <td className="px-4 py-2.5">
+                  <OrderSources sources={orderSources[p.id] ?? []} />
+                </td>
                 <td className="px-4 py-2.5 text-right tnum">{fmtNum(p.reorder.rop, 1)}</td>
                 <td className="px-4 py-2.5 text-right tnum">{p.adu > 0 ? fmtNum(p.adu, 2) : "—"}</td>
                 <td className="px-4 py-2.5 text-right tnum">{coverLabel(p.reorder.daysUntilReorder)}</td>
