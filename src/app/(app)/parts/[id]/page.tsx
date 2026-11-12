@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getPartRow, getSettings } from "@/lib/metrics";
+import { getOnOrderSourcesForItem, getPartRow, getSettings } from "@/lib/metrics";
 import { currentUser } from "@/lib/rbac";
 import { roleAtLeast } from "@/lib/constants";
 import { updatePart, receiveStock } from "@/lib/actions";
@@ -18,11 +18,12 @@ import { supplierLabel } from "@/lib/price-supplier";
 export default async function PartDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [p, settings, user, suppliers, item, priceHistory] = await Promise.all([
+  const [p, settings, user, suppliers, onOrderFrom, item, priceHistory] = await Promise.all([
     getPartRow(id),
     getSettings(),
     currentUser(),
     prisma.supplier.findMany({ orderBy: { name: "asc" } }),
+    getOnOrderSourcesForItem(id),
     prisma.item.findUnique({
       where: { id },
       include: {
@@ -110,6 +111,26 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
           title="Outstanding quantity on sent purchase orders (ordered or partial): quantity ordered minus quantity already received. Drafts, fully received orders, and cancelled orders are not included."
         />
       </div>
+
+      <Card title="On order from">
+        {onOrderFrom.length === 0 ? (
+          <p className="px-4 py-3 text-sm text-muted">Nothing on order.</p>
+        ) : (
+          <ul className="divide-y">
+            {onOrderFrom.map((source) => (
+              <li key={source.poId} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5 text-sm">
+                <span className="font-medium text-ink">{source.supplierName}</span>
+                <span className="text-muted">
+                  <Link href={`/purchase-orders/${source.poId}`} className="font-medium text-ink hover:text-brand">
+                    {source.poNumber}
+                  </Link>
+                  <span className="tnum"> · {fmtNum(source.qty)} outstanding</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       {canEdit && (
         <Card title="Details" className="no-print">
