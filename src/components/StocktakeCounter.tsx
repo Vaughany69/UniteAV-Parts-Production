@@ -10,6 +10,8 @@ export interface CountablePart {
   partNumber: string;
   name: string;
   mpn: string | null;
+  /** Substitute MPNs. The search box matches these the same way it matches `mpn`. */
+  alternateMpns?: string[];
   onHand: number;
 }
 
@@ -204,7 +206,8 @@ export function StocktakeCounter({
             (p) =>
               p.partNumber.toLowerCase().includes(q) ||
               p.name.toLowerCase().includes(q) ||
-              (p.mpn ?? "").toLowerCase().includes(q),
+              (p.mpn ?? "").toLowerCase().includes(q) ||
+              (p.alternateMpns ?? []).some((mpn) => mpn.toLowerCase().includes(q)),
           )
           .slice(0, 8);
 

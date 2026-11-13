@@ -17,7 +17,7 @@ function text(formData: FormData, key: string): string | null {
 }
 function revalidateParts(id?: string) {
   if (id) revalidatePath(`/parts/${id}`);
-  for (const p of ["/parts", "/products", "/to-order", "/count", "/"]) revalidatePath(p);
+  for (const p of ["/parts", "/products", "/to-order", "/count", "/", "/purchase-orders"]) revalidatePath(p);
 }
 
 /**
@@ -148,9 +148,117 @@ export async function updatePartIdentity(
 
     revalidateParts(id);
     revalidatePath("/production");
-    revalidatePath("/purchase-orders");
     return { ok: true, partNumber: nextNumber, name: nextName };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not update the part." };
+  }
+}
+
+/** A substitute MPN has to be a real string, and not the part's own number. */
+async function readAlternate(formData: FormData, itemId: string) {
+  const mpn = String(formData.get("mpn") ?? "").trim();
+  if (!mpn) return { ok: false as const, error: "Part number can't be empty." };
+  if (mpn.length > 120) return { ok: false as const, error: "Part number is too long." };
+
+  const item = await prisma.item.findUnique({
+    where: { id: itemId },
+    select: { type: true, mpn: true },
+  });
+  if (!item) return { ok: false as const, error: "Part not found." };
+  if (item.type !== "PART") return { ok: false as const, error: "Alternates are stored on parts." };
+  if (item.mpn && item.mpn.trim().toLowerCase() === mpn.toLowerCase())
+    return { ok: false as const, error: `${mpn} is already this part's own manufacturer part number.` };
+
+  const supplierId = text(formData, "supplierId");
+  if (supplierId) {
+    const supplier = await prisma.supplier.findUnique({ where: { id: supplierId }, select: { id: true } });
+    if (!supplier) return { ok: false as const, error: "That supplier no longer exists." };
+  }
+
+  return {
+    ok: true as const,
+    data: {
+      mpn,
+      manufacturer: text(formData, "manufacturer"),
+      supplierId,
+      note: text(formData, "note"),
+    },
+  };
+}
+
+/** Add a substitute manufacturer part number. Managers, same gate as editing details. */
+export async function addAlternate(_prev: PartResult | null, formData: FormData): Promise<PartResult> {
+  try {
+    await requireRole("MANAGER");
+    const itemId = String(formData.get("itemId") ?? "");
+    if (!itemId) return { ok: false, error: "Missing part." };
+    const parsed = await readAlternate(formData, itemId);
+    if (!parsed.ok) return parsed;
+
+    try {
+      await prisma.itemAlternate.create({ data: { itemId, ...parsed.data } });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
+        return { ok: false, error: `${parsed.data.mpn} is already an alternate of this part.` };
+      throw e;
+    }
+
+    revalidateParts(itemId);
+    return { ok: true, message: `Added alternate ${parsed.data.mpn}.` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not add the alternate." };
+  }
+}
+
+/** Change one substitute. The row has to belong to the part named in the form. */
+export async function updateAlternate(_prev: PartResult | null, formData: FormData): Promise<PartResult> {
+  try {
+    await requireRole("MANAGER");
+    const itemId = String(formData.get("itemId") ?? "");
+    const alternateId = String(formData.get("alternateId") ?? "");
+    if (!itemId || !alternateId) return { ok: false, error: "Missing alternate." };
+    const parsed = await readAlternate(formData, itemId);
+    if (!parsed.ok) return parsed;
+
+    const row = await prisma.itemAlternate.findFirst({
+      where: { id: alternateId, itemId },
+      select: { id: true },
+    });
+    if (!row) return { ok: false, error: "That alternate is not on this part." };
+
+    try {
+      await prisma.itemAlternate.update({ where: { id: alternateId }, data: parsed.data });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
+        return { ok: false, error: `${parsed.data.mpn} is already an alternate of this part.` };
+      throw e;
+    }
+
+    revalidateParts(itemId);
+    return { ok: true, message: "Alternate saved." };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not save the alternate." };
+  }
+}
+
+/** Drop one substitute. Does not touch the part's own MPN or any BOM. */
+export async function removeAlternate(_prev: PartResult | null, formData: FormData): Promise<PartResult> {
+  try {
+    await requireRole("MANAGER");
+    const itemId = String(formData.get("itemId") ?? "");
+    const alternateId = String(formData.get("alternateId") ?? "");
+    if (!itemId || !alternateId) return { ok: false, error: "Missing alternate." };
+
+    const row = await prisma.itemAlternate.findFirst({
+      where: { id: alternateId, itemId },
+      select: { id: true, mpn: true },
+    });
+    if (!row) return { ok: false, error: "That alternate is not on this part." };
+
+    await prisma.itemAlternate.delete({ where: { id: alternateId } });
+    revalidateParts(itemId);
+    return { ok: true, message: `Removed alternate ${row.mpn}.` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not remove the alternate." };
   }
 }

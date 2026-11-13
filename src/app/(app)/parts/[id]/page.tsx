@@ -5,8 +5,9 @@ import { getOnOrderSourcesForItem, getPartRow, getSettings } from "@/lib/metrics
 import { currentUser } from "@/lib/rbac";
 import { roleAtLeast } from "@/lib/constants";
 import { updatePart, receiveStock } from "@/lib/actions";
-import { updatePartDetails } from "@/lib/part-actions";
 import { ActionForm } from "@/components/ActionForm";
+import { PartAlternates } from "@/components/PartAlternates";
+import { PartDetailsForm } from "@/components/PartDetailsForm";
 import { Card, StatTile, StatusBadge, Badge, EmptyState, input } from "@/components/ui";
 import { BackLink } from "@/components/ListMemory";
 import { DeleteItemButton } from "@/components/DeleteItemButton";
@@ -29,6 +30,10 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
       include: {
         bomChildren: { include: { parent: { select: { id: true, name: true, partNumber: true } } } },
         invTxns: { orderBy: { createdAt: "desc" }, take: 12 },
+        alternates: {
+          orderBy: { mpn: "asc" },
+          include: { supplier: { select: { id: true, name: true } } },
+        },
       },
     }),
     prisma.priceHistory.findMany({
@@ -42,6 +47,14 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
     }),
   ]);
   if (!item) notFound();
+  const alternates = item.alternates.map((alt) => ({
+    id: alt.id,
+    mpn: alt.mpn,
+    manufacturer: alt.manufacturer,
+    supplierId: alt.supplierId,
+    supplierName: alt.supplier?.name ?? null,
+    note: alt.note,
+  }));
   const canEdit = roleAtLeast(user?.role, "MANAGER");
   const canReceive = roleAtLeast(user?.role, "OPERATOR");
   const canDelete = roleAtLeast(user?.role, "ADMIN");
@@ -132,42 +145,40 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
         )}
       </Card>
 
-      {canEdit && (
-        <Card title="Details" className="no-print">
-          <ActionForm action={updatePartDetails} submitLabel="Save details" className="space-y-3 p-4">
-            <input type="hidden" name="itemId" value={item.id} />
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Description">
-                {/* Keyed so an admin description edit (which refreshes this page) lands in
-                    the field rather than leaving the text this input mounted with. */}
-                <input key={item.name} className={input} name="name" defaultValue={item.name} required />
-              </Field>
-              <Field label="Value / comment">
-                <input className={input} name="value" defaultValue={item.value ?? ""} />
-              </Field>
-              <Field label="Footprint">
-                <input className={input} name="footprint" defaultValue={item.footprint ?? ""} />
-              </Field>
-              <Field label="Manufacturer">
-                <input className={input} name="manufacturer" defaultValue={item.manufacturer ?? ""} />
-              </Field>
-              <Field label="Manufacturer part no.">
-                <input className={input} name="mpn" defaultValue={item.mpn ?? ""} />
-              </Field>
-              <Field label="Unit">
-                <input className={input} name="uom" defaultValue={item.uom} />
-              </Field>
-              <Field label="Notes">
-                <input className={input} name="notes" defaultValue={item.notes ?? ""} />
-              </Field>
+      <Card title="Details" className={canEdit ? "no-print" : ""}>
+        {canEdit ? (
+          <PartDetailsForm
+            item={{
+              id: item.id,
+              name: item.name,
+              value: item.value,
+              footprint: item.footprint,
+              manufacturer: item.manufacturer,
+              mpn: item.mpn,
+              uom: item.uom,
+              notes: item.notes,
+            }}
+            alternates={alternates}
+            suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))}
+          />
+        ) : (
+          <div className="grid gap-4 p-4">
+            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Info label="Description" value={item.name} />
+              <Info label="Value / comment" value={item.value ?? "—"} />
+              <Info label="Footprint" value={item.footprint ?? "—"} />
+              <Info label="Manufacturer" value={item.manufacturer ?? "—"} />
+              <Info label="Manufacturer part no." value={item.mpn ?? "—"} />
+              <Info label="Unit" value={item.uom} />
+            </dl>
+            <PartAlternates itemId={item.id} alternates={alternates} suppliers={[]} canEdit={false} />
+            <div>
+              <div className="text-xs font-medium text-ink-2">Notes</div>
+              <p className="mt-1 text-sm text-ink">{item.notes ?? "—"}</p>
             </div>
-            <p className="text-xs text-muted">
-              Description, value, footprint, manufacturer and MPN come from the BOM sheets and are refreshed whenever a
-              BOM carrying this part is imported. Unit and notes are app-only and always stay.
-            </p>
-          </ActionForm>
-        </Card>
-      )}
+          </div>
+        )}
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Planning fields */}

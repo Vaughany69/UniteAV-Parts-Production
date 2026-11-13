@@ -53,6 +53,7 @@ model Item {
   explodedLeaf    ExplodedBom[]   @relation("expLeaf")
   poLines         PurchaseOrderLine[]
   priceHistory    PriceHistory[]
+  alternates      ItemAlternate[]
 
   @@index([type])
   @@index([category])
@@ -98,6 +99,29 @@ model Supplier {
   items          Item[]
   purchaseOrders PurchaseOrder[]
   priceHistory   PriceHistory[]
+  alternates     ItemAlternate[]
+}
+
+/// A substitute manufacturer part number for an item.
+///
+/// BOM import refreshes Item.mpn and never writes this table, so a substitute
+/// entered here stays put when a spreadsheet is imported again.
+model ItemAlternate {
+  id           String   @id @default(cuid())
+  itemId       String
+  mpn          String
+  manufacturer String?
+  supplierId   String?
+  note         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  item     Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  @@unique([itemId, mpn])
+  @@index([mpn])
 }
 
 /// A purchase order to a supplier. Receiving its lines auto-updates on-hand stock.

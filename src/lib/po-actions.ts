@@ -10,6 +10,7 @@ import { setItemCost } from "@/lib/pricing";
 import { costChangeRecordsHistory, historySupplierForPo, SUPPLIER_GONE } from "@/lib/price-supplier";
 import { getToOrderBySupplier, getSettings } from "@/lib/metrics";
 import { nextPoNumber, orderCurrencyFor, toOrderCurrency, toHomeCurrency } from "@/lib/po-create";
+import { findItemByMpn } from "@/lib/mpn";
 import type { ActionResult } from "@/lib/actions";
 import {
   EDITABLE,
@@ -286,10 +287,14 @@ export async function addPoLine(formData: FormData): Promise<void> {
   const qty = Math.max(1, Number(String(formData.get("qty") ?? "1")));
   const costRaw = String(formData.get("unitCost") ?? "").trim();
   const cost = costRaw === "" ? null : Math.max(0, Number(costRaw) || 0);
-  const item = await prisma.item.findUnique({ where: { partNumber } });
+  // Item number first. A manufacturer part number, including a stored substitute,
+  // resolves to the same part when the item number itself matches nothing.
+  const item =
+    (await prisma.item.findUnique({ where: { partNumber } })) ?? (await findItemByMpn(partNumber));
   // Previously an item number that matched nothing did nothing at all: the form cleared
   // and the line never appeared, which reads exactly like a broken button.
-  if (!item) refuse(poId, `No part has the item number "${partNumber}". Check it on the Parts page.`);
+  if (!item)
+    refuse(poId, `No part has the item number or manufacturer part number "${partNumber}". Check it on the Parts page.`);
   const home = cost == null ? null : toHomeCurrency(cost, po.fxToHome);
   if (costChangeRecordsHistory(item.unitCost, home)) {
     const resolved = historySupplierForPo(po.supplierId);
