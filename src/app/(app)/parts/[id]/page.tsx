@@ -148,6 +148,7 @@ export default async function PartDetailPage({ params }: { params: Promise<{ id:
       <Card title="Details" className={canEdit ? "no-print" : ""}>
         {canEdit ? (
           <PartDetailsForm
+            key={item.id}
             item={{
               id: item.id,
               name: item.name,
