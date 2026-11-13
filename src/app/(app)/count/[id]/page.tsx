@@ -41,7 +41,14 @@ export default async function StocktakeDetailPage({ params }: { params: Promise<
           ...(take.category ? { category: take.category } : {}),
         },
         orderBy: { partNumber: "asc" },
-        select: { id: true, partNumber: true, name: true, mpn: true, onHand: true },
+        select: {
+          id: true,
+          partNumber: true,
+          name: true,
+          mpn: true,
+          onHand: true,
+          alternates: { select: { mpn: true } },
+        },
       })
     : [];
 
@@ -86,7 +93,14 @@ export default async function StocktakeDetailPage({ params }: { params: Promise<
       {isOpen && (
         <StocktakeCounter
           stocktakeId={take.id}
-          parts={parts}
+          parts={parts.map((p) => ({
+            id: p.id,
+            partNumber: p.partNumber,
+            name: p.name,
+            mpn: p.mpn,
+            onHand: p.onHand,
+            alternateMpns: p.alternates.map((alt) => alt.mpn),
+          }))}
           entries={rows.map((r) => ({
             id: r.id,
             itemId: r.itemId,

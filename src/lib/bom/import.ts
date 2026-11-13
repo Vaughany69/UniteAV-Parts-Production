@@ -87,6 +87,8 @@ export async function importBom(
       footprint: row.footprint ?? null,
       manufacturer: row.manufacturer ?? null,
       mpn: row.mpn ?? null,
+      // ItemAlternate is not in this payload. A re-import refreshes the primary MPN
+      // and leaves substitute part numbers where they were entered.
       category: categoryFromPartNumber(row.partNumber),
     };
 

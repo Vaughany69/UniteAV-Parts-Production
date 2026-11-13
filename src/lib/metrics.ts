@@ -78,6 +78,8 @@ export interface PartRow {
   value: string | null;
   manufacturer: string | null;
   mpn: string | null;
+  /** Substitute manufacturer part numbers. Search matches these as well as `mpn`. */
+  alternateMpns: string[];
   uom: string;
   onHand: number;
   onOrderQty: number; // remaining qty on sent POs (ordered − received)
@@ -220,6 +222,7 @@ export const getOnOrderSourcesForItem = cache(async (itemId: string): Promise<On
 
 const partItemInclude = {
   supplier: { select: { name: true } },
+  alternates: { select: { mpn: true }, orderBy: { mpn: "asc" as const } },
   _count: { select: { bomChildren: true } }, // lines where this item is the child (i.e. used by a product)
 } as const;
 
@@ -254,6 +257,7 @@ function toPartRow(
     value: it.value,
     manufacturer: it.manufacturer,
     mpn: it.mpn,
+    alternateMpns: it.alternates.map((alt) => alt.mpn),
     uom: it.uom,
     onHand: it.onHand,
     onOrderQty,

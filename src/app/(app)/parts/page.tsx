@@ -47,7 +47,7 @@ export default async function PartsPage({
   const query = q.trim().toLowerCase();
   const filtered = rows.filter((p) => {
     if (query) {
-      const hay = `${p.partNumber} ${p.name} ${p.value ?? ""} ${p.mpn ?? ""} ${p.manufacturer ?? ""}`.toLowerCase();
+      const hay = `${p.partNumber} ${p.name} ${p.value ?? ""} ${p.mpn ?? ""} ${p.alternateMpns.join(" ")} ${p.manufacturer ?? ""}`.toLowerCase();
       if (!hay.includes(query)) return false;
     }
     const s = p.reorder.status;

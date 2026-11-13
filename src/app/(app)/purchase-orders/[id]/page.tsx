@@ -50,7 +50,7 @@ export default async function PurchaseOrderDetail({
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.item.findMany({
       where: { type: { in: ["PART", "ASSEMBLY"] }, active: true },
-      select: { partNumber: true },
+      select: { partNumber: true, mpn: true, alternates: { select: { mpn: true } } },
       orderBy: { partNumber: "asc" },
     }),
     getSettings(),
@@ -418,9 +418,12 @@ export default async function PurchaseOrderDetail({
                 <span className="mb-1 block text-xs font-medium text-ink-2">Item number</span>
                 <input className={`${input} w-48`} name="partNumber" list="parts-dl" placeholder="e.g. CAPS-00085" required />
                 <datalist id="parts-dl">
-                  {parts.map((p) => (
-                    <option key={p.partNumber} value={p.partNumber} />
-                  ))}
+                  {parts.flatMap((p) => {
+                    const values = [p.partNumber, p.mpn, ...p.alternates.map((alt) => alt.mpn)].filter(
+                      (v): v is string => Boolean(v),
+                    );
+                    return values.map((value) => <option key={`${p.partNumber}:${value}`} value={value} />);
+                  })}
                 </datalist>
               </label>
               <label className="block">
