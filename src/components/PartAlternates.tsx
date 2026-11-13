@@ -73,20 +73,39 @@ function AlternateEditor({
 
   return (
     <div className="space-y-2 rounded-lg border p-3">
-      <form action={save} className="grid gap-2 sm:grid-cols-2">
+      <form action={save} autoComplete="off" className="grid gap-2 sm:grid-cols-2">
         <input type="hidden" name="itemId" value={itemId} />
         <input type="hidden" name="alternateId" value={alt.id} />
         <Field label="Part number">
-          <input className={input} name="mpn" defaultValue={alt.mpn} required />
+          <input
+            id={`alternate-${alt.id}-mpn`}
+            className={input}
+            name="alternateMpn"
+            defaultValue={alt.mpn}
+            autoComplete="off"
+            required
+          />
         </Field>
         <Field label="Manufacturer">
-          <input className={input} name="manufacturer" defaultValue={alt.manufacturer ?? ""} />
+          <input
+            id={`alternate-${alt.id}-manufacturer`}
+            className={input}
+            name="alternateManufacturer"
+            defaultValue={alt.manufacturer ?? ""}
+            autoComplete="off"
+          />
         </Field>
         <Field label="Supplier">
-          <SupplierSelect suppliers={suppliers} defaultValue={alt.supplierId ?? ""} />
+          <SupplierSelect id={`alternate-${alt.id}-supplier`} suppliers={suppliers} defaultValue={alt.supplierId ?? ""} />
         </Field>
         <Field label="Note">
-          <input className={input} name="note" defaultValue={alt.note ?? ""} />
+          <input
+            id={`alternate-${alt.id}-note`}
+            className={input}
+            name="alternateNote"
+            defaultValue={alt.note ?? ""}
+            autoComplete="off"
+          />
         </Field>
         <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
           <button className={btnPrimary} disabled={saving || removing}>
@@ -124,19 +143,42 @@ function AddAlternate({
   const [state, action, pending] = useActionState<PartResult | null, FormData>(addAlternate, null);
 
   return (
-    <form action={action} className={`${hasRows ? "mt-3" : ""} grid gap-2 rounded-lg border border-dashed p-3 sm:grid-cols-2`}>
+    <form
+      action={action}
+      autoComplete="off"
+      className={`${hasRows ? "mt-3" : ""} grid gap-2 rounded-lg border border-dashed p-3 sm:grid-cols-2`}
+    >
       <input type="hidden" name="itemId" value={itemId} />
       <Field label="Part number">
-        <input className={input} name="mpn" placeholder="0805N101J102CT" required />
+        <input
+          id={`alternate-new-${itemId}-mpn`}
+          className={input}
+          name="alternateMpn"
+          placeholder="Substitute part number"
+          autoComplete="off"
+          required
+        />
       </Field>
       <Field label="Manufacturer">
-        <input className={input} name="manufacturer" placeholder="Walsin" />
+        <input
+          id={`alternate-new-${itemId}-manufacturer`}
+          className={input}
+          name="alternateManufacturer"
+          placeholder="Manufacturer"
+          autoComplete="off"
+        />
       </Field>
       <Field label="Supplier">
-        <SupplierSelect suppliers={suppliers} defaultValue="" />
+        <SupplierSelect id={`alternate-new-${itemId}-supplier`} suppliers={suppliers} defaultValue="" />
       </Field>
       <Field label="Note">
-        <input className={input} name="note" placeholder="Where this substitute came from" />
+        <input
+          id={`alternate-new-${itemId}-note`}
+          className={input}
+          name="alternateNote"
+          placeholder="Where this substitute came from"
+          autoComplete="off"
+        />
       </Field>
       <div className="sm:col-span-2">
         <button className={btnPrimary} disabled={pending}>
@@ -150,14 +192,16 @@ function AddAlternate({
 }
 
 function SupplierSelect({
+  id,
   suppliers,
   defaultValue,
 }: {
+  id: string;
   suppliers: { id: string; name: string }[];
   defaultValue: string;
 }) {
   return (
-    <select className={input} name="supplierId" defaultValue={defaultValue}>
+    <select id={id} className={input} name="alternateSupplierId" defaultValue={defaultValue} autoComplete="off">
       <option value="">—</option>
       {suppliers.map((s) => (
         <option key={s.id} value={s.id}>

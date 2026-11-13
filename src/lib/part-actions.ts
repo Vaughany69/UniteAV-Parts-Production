@@ -156,7 +156,7 @@ export async function updatePartIdentity(
 
 /** A substitute MPN has to be a real string, and not the part's own number. */
 async function readAlternate(formData: FormData, itemId: string) {
-  const mpn = String(formData.get("mpn") ?? "").trim();
+  const mpn = String(formData.get("alternateMpn") ?? "").trim();
   if (!mpn) return { ok: false as const, error: "Part number can't be empty." };
   if (mpn.length > 120) return { ok: false as const, error: "Part number is too long." };
 
@@ -169,7 +169,7 @@ async function readAlternate(formData: FormData, itemId: string) {
   if (item.mpn && item.mpn.trim().toLowerCase() === mpn.toLowerCase())
     return { ok: false as const, error: `${mpn} is already this part's own manufacturer part number.` };
 
-  const supplierId = text(formData, "supplierId");
+  const supplierId = text(formData, "alternateSupplierId");
   if (supplierId) {
     const supplier = await prisma.supplier.findUnique({ where: { id: supplierId }, select: { id: true } });
     if (!supplier) return { ok: false as const, error: "That supplier no longer exists." };
@@ -179,9 +179,9 @@ async function readAlternate(formData: FormData, itemId: string) {
     ok: true as const,
     data: {
       mpn,
-      manufacturer: text(formData, "manufacturer"),
+      manufacturer: text(formData, "alternateManufacturer"),
       supplierId,
-      note: text(formData, "note"),
+      note: text(formData, "alternateNote"),
     },
   };
 }
