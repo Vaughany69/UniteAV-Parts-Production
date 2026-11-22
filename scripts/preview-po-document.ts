@@ -55,7 +55,6 @@ const domestic = buildPoDocument(
     ],
   },
   settings,
-  "Josh Vaughan",
 );
 
 /** An overseas order: no GST line, no supplier address on file, no required-by date. */
@@ -75,7 +74,6 @@ const overseas = buildPoDocument(
     ],
   },
   settings,
-  "Josh Vaughan",
 );
 
 /** The same order before the letterhead has been filled in. */
@@ -91,7 +89,6 @@ const anonymous = buildPoDocument(
     lines: [line("MECH-00041", "Chassis, 2U rack", null, 5, 84.2)],
   },
   { ...settings, companyName: null, companyAbn: null, companyAddress: null, deliverTo: null, poTerms: null },
-  null,
 );
 
 const sheets = [

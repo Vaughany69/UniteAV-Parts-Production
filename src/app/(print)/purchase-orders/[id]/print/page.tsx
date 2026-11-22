@@ -37,12 +37,7 @@ export default async function PurchaseOrderDocument({ params }: { params: Promis
   ]);
   if (!po) notFound();
 
-  // PurchaseOrder carries a userId but has no relation to User, so this is its own lookup.
-  const raiser = po.userId
-    ? await prisma.user.findUnique({ where: { id: po.userId }, select: { name: true, email: true } })
-    : null;
-
-  const doc = buildPoDocument(po, settings, raiser?.name ?? raiser?.email ?? null);
+  const doc = buildPoDocument(po, settings);
 
   return (
     <>
