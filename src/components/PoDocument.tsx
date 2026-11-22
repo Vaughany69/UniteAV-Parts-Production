@@ -98,7 +98,7 @@ export const PO_DOCUMENT_CSS = `
   .doc-foot td { vertical-align: top; padding: 0 0 2mm; }
   .doc-sign {
     margin-top: 8mm; padding-top: 2mm; border-top: 0.4pt solid #ddd;
-    font-size: 8pt; color: #444; display: flex; justify-content: space-between; gap: 8mm;
+    font-size: 8pt; color: #444; display: flex; justify-content: flex-end;
   }
 
   @media screen {
@@ -270,8 +270,8 @@ export function PoDocumentSheet({ doc }: { doc: PoDocument }) {
             </tr>
           </tbody>
         </table>
+        {/* Order number only. Who raised the order is not printed on the copy a supplier receives. */}
         <div className="doc-sign">
-          <span>{doc.raisedBy ? `Raised by ${doc.raisedBy}` : ""}</span>
           <span>{doc.poNumber}</span>
         </div>
       </footer>

@@ -7,7 +7,9 @@
  *
  *   npx tsx scripts/verify-po-document.ts
  */
+import { renderToStaticMarkup } from "react-dom/server";
 import { buildPoDocument } from "@/lib/po-document";
+import { PoDocumentSheet } from "@/components/PoDocument";
 
 let pass = 0;
 let fail = 0;
@@ -59,12 +61,12 @@ function po(supplier: TestSupplier | null, lines: ReturnType<typeof line>[], ext
 }
 
 console.log("\nGST appears only where it is charged");
-const dom = buildPoDocument(po(domestic, [line("MECH-1", "Chassis", 25, 84.2)]), settings, "Josh");
+const dom = buildPoDocument(po(domestic, [line("MECH-1", "Chassis", 25, 84.2)]), settings);
 check("domestic subtotal", dom.subtotal, 2105);
 check("domestic GST at 10%", dom.gst, 210.5);
 check("domestic total", dom.total, 2315.5);
 
-const ovs = buildPoDocument(po(overseas, [line("MECH-1", "Chassis", 25, 84.2)]), settings, "Josh");
+const ovs = buildPoDocument(po(overseas, [line("MECH-1", "Chassis", 25, 84.2)]), settings);
 check("overseas has no GST line", ovs.gst, null);
 check("overseas total equals its subtotal", ovs.total, ovs.subtotal);
 
@@ -74,7 +76,6 @@ console.log("\nThe printed column adds up to the printed subtotal");
 const awkward = buildPoDocument(
   po(domestic, [line("CAPS-1", "Cap", 3, 0.335), line("CAPS-2", "Cap", 7, 0.1234)]),
   settings,
-  null,
 );
 check("line amounts are rounded to cents", awkward.lines.map((l) => l.amount), [1.01, 0.86]);
 check("subtotal equals the sum of the printed amounts", awkward.subtotal, 1.87);
@@ -89,7 +90,6 @@ console.log("\nLine numbering and MPN");
 const numbered = buildPoDocument(
   po(domestic, [line("A-1", "Part A", 1, 1, "MPN-A"), line("B-1", "Part B", 1, 1, "Part B")]),
   settings,
-  null,
 );
 check("lines are numbered from 1", numbered.lines.map((l) => l.n), [1, 2]);
 check("an MPN that differs is shown", numbered.lines[0].mpn, "MPN-A");
@@ -98,31 +98,47 @@ check("an MPN identical to the description is dropped", numbered.lines[1].mpn, n
 console.log("\nDates and addresses");
 check(
   "the order date is the day it was sent, not raised",
-  buildPoDocument(po(domestic, [], { orderedAt: new Date("2026-10-25T00:00:00Z") }), settings, null).raisedOn.toISOString().slice(0, 10),
+  buildPoDocument(po(domestic, [], { orderedAt: new Date("2026-10-25T00:00:00Z") }), settings).raisedOn.toISOString().slice(0, 10),
   "2026-10-25",
 );
 check(
   "an unsent order falls back to the day it was raised",
-  buildPoDocument(po(domestic, []), settings, null).raisedOn.toISOString().slice(0, 10),
+  buildPoDocument(po(domestic, []), settings).raisedOn.toISOString().slice(0, 10),
   "2026-10-20",
 );
 check("deliver-to falls back to the business address", dom.deliverTo, "12 Example St\nSuburb VIC 3000");
 check(
   "an explicit deliver-to wins",
-  buildPoDocument(po(domestic, []), { ...settings, deliverTo: "Rear dock" }, null).deliverTo,
+  buildPoDocument(po(domestic, []), { ...settings, deliverTo: "Rear dock" }).deliverTo,
   "Rear dock",
 );
-check("a PO with no supplier says so rather than printing blank", buildPoDocument(po(null, []), settings, null).supplier.name, "Unassigned supplier");
-check("a PO with no supplier still assumes GST", buildPoDocument(po(null, []), settings, null).gst, 0);
+check("a PO with no supplier says so rather than printing blank", buildPoDocument(po(null, []), settings).supplier.name, "Unassigned supplier");
+check("a PO with no supplier still assumes GST", buildPoDocument(po(null, []), settings).gst, 0);
 
 console.log("\nAn unfilled letterhead is reported, not printed blank");
 check(
   "every missing field is named",
-  buildPoDocument(po(domestic, []), { ...settings, companyName: null, companyAbn: null, companyAddress: "  " }, null)
+  buildPoDocument(po(domestic, []), { ...settings, companyName: null, companyAbn: null, companyAddress: "  " })
     .missingCompanyDetails,
   ["business name", "ABN", "address"],
 );
 check("a complete letterhead reports nothing", dom.missingCompanyDetails, []);
+
+console.log("\nThe supplier copy does not name who raised the order");
+const withNotes = buildPoDocument(
+  po(domestic, [line("MECH-1", "Chassis", 1, 1)], {
+    notes: "Call on arrival",
+    expectedAt: new Date("2026-11-08T00:00:00Z"),
+  }),
+  settings,
+);
+const sheet = renderToStaticMarkup(PoDocumentSheet({ doc: withNotes }));
+check("the raised-by line is not printed", sheet.includes("Raised by"), false);
+check("the order number still closes the sheet", sheet.includes(">PO-0007<"), true);
+check("notes still print", sheet.includes("Call on arrival"), true);
+check("terms still print", sheet.includes("30 days from invoice."), true);
+check("the required-by date still prints", sheet.includes("Required by"), true);
+check("no empty sign-off cell is left behind", sheet.includes('class="doc-sign"><span></span>'), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

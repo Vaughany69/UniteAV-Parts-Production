@@ -53,7 +53,6 @@ export interface PoDocument {
   total: number;
   notes: string | null;
   terms: string | null;
-  raisedBy: string | null;
   /** Letterhead fields still unset, so the document would go out anonymous. */
   missingCompanyDetails: string[];
 }
@@ -92,7 +91,7 @@ function money(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function buildPoDocument(po: SourcePo, settings: SourceSettings, raisedBy: string | null): PoDocument {
+export function buildPoDocument(po: SourcePo, settings: SourceSettings): PoDocument {
   const lines: DocumentLine[] = po.lines.map((l, i) => ({
     n: i + 1,
     partNumber: l.item.partNumber,
@@ -145,7 +144,6 @@ export function buildPoDocument(po: SourcePo, settings: SourceSettings, raisedBy
     total: money(subtotal + (gst ?? 0)),
     notes: po.notes?.trim() || null,
     terms: settings.poTerms?.trim() || null,
-    raisedBy,
     missingCompanyDetails: missing,
   };
 }
