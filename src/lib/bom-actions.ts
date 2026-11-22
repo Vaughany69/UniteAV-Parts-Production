@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/rbac";
 import { explodeProduct } from "@/lib/bom/explode";
 import { productsAbove } from "@/lib/item-removal";
 import { createPartRecord, partInputFromForm } from "@/lib/part-create";
+import { bomLineRemovalError } from "@/lib/bom/remove-line";
 
 /**
  * Hand-editing BOM lines. Anything changed here is subject to the same pruning an import
@@ -124,36 +125,55 @@ export async function addBomLine(_prev: BomResult | null, formData: FormData): P
 
 /**
  * Drop one line from a product's or board's BOM. The part stays in the catalogue —
- * only this BomLine row is deleted, then the exploded cache above the parent is rebuilt.
+ * only this BomLine row is deleted. Cost, stock, and every other product's lines are
+ * left as they are. A part shared by several products (MECH-00028, for instance) loses
+ * its place on this parent only.
  *
- * Re-importing that board's (or product's) BOM sheet puts the line back if the sheet
- * still lists the part. This does not archive or delete the Item.
+ * `parentItemId` is the product or board the page is editing. The line is deleted only
+ * when it actually belongs to that parent, so a request cannot remove a different
+ * product's line. Admin only — a manager can add a line, not remove one.
+ *
+ * Afterwards the exploded-requirement cache (ExplodedBom) for this product, and for
+ * products built from this board, is recomputed from the BOM lines that remain. That
+ * cache is what a build consumes. It is not a re-import: no spreadsheet is read, and
+ * no other BomLine row is written. Re-importing that board's or product's BOM sheet
+ * puts the line back if the sheet still lists the part.
  */
-export async function removeBomLine(bomLineId: string): Promise<BomResult> {
+export async function removeBomLine(bomLineId: string, parentItemId: string): Promise<BomResult> {
   try {
     await requireRole("ADMIN");
     const id = String(bomLineId ?? "").trim();
-    if (!id) return { ok: false, error: "Missing BOM line." };
+    const parentId = String(parentItemId ?? "").trim();
 
-    const line = await prisma.bomLine.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        parentItemId: true,
-        child: { select: { partNumber: true } },
-        parent: { select: { name: true } },
-      },
-    });
+    const line = id
+      ? await prisma.bomLine.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            parentItemId: true,
+            child: { select: { partNumber: true } },
+            parent: { select: { name: true } },
+          },
+        })
+      : null;
+    const error = bomLineRemovalError(line, id, parentId);
+    if (error) return { ok: false, error };
     if (!line) return { ok: false, error: "BOM line not found." };
 
-    await prisma.bomLine.delete({ where: { id: line.id } });
+    // The id is unique. Pairing it with the parent means a mismatched row is a no-op
+    // rather than a delete, even if the check above were skipped.
+    const deleted = await prisma.bomLine.deleteMany({
+      where: { id: line.id, parentItemId: line.parentItemId },
+    });
+    if (deleted.count !== 1) return { ok: false, error: "BOM line not found." };
+
     const rebuilt = await rebuildAbove(line.parentItemId);
     revalidateBom(line.parentItemId);
     return {
       ok: true,
       message:
         `Removed ${line.child.partNumber} from ${line.parent.name}.` +
-        (rebuilt.length ? ` Rebuilt ${rebuilt.join(", ")}.` : " Nothing above it needed rebuilding."),
+        (rebuilt.length ? ` Build requirements updated for ${rebuilt.join(", ")}.` : ""),
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not remove the line." };
